@@ -10,6 +10,7 @@ import android.util.Log;
 import com.google.android.filament.IndirectLight;
 import com.google.android.filament.Texture;
 
+import com.google.android.filament.utils.KTXLoader;
 import com.google.ar.sceneform.math.Matrix;
 import com.google.ar.sceneform.math.Quaternion;
 import com.google.ar.sceneform.rendering.SceneformBundle.VersionException;
@@ -114,6 +115,7 @@ public class LightProbe {
   private ChangeId changeId = new ChangeId();
 
   private float intensity;
+  private IndirectLight indirectLight;
   private float lightEstimate = 1.0f;
   @Nullable private Quaternion rotation;
 
@@ -163,38 +165,11 @@ public class LightProbe {
   /** @hide */
   @Nullable
   IndirectLight buildIndirectLight() {
-    Preconditions.checkNotNull(irradianceData, "\"irradianceData\" was null.");
-    Preconditions.checkState(
-        irradianceData.length >= FLOATS_PER_VECTOR,
-        "\"irradianceData\" does not have enough components to store a vector");
-
-    if (reflectCubemap == null) {
-      throw new IllegalStateException("reflectCubemap is null.");
-    }
-
-    // Modulates ambient color with modulation factor. irradianceData must have at least one vector
-    // of three floats.
-    irradianceData[0] = ambientColor.r * colorCorrection.r;
-    irradianceData[1] = ambientColor.g * colorCorrection.g;
-    irradianceData[2] = ambientColor.b * colorCorrection.b;
-
-    IndirectLight indirectLight =
-        new IndirectLight.Builder()
-            .reflections(reflectCubemap)
-            .irradiance(SH_ORDER, irradianceData)
-            .intensity(intensity * lightEstimate)
-            .build(EngineInstance.getEngine().getFilamentEngine());
-
-    // There is a bug in filament where setting the rotation doesn't work if it is done using
-    // the builder. It must be done on the actual indirect light object.
-    if (rotation != null) {
-      indirectLight.setRotation(quaternionToRotationMatrix(rotation));
-    }
-
-    if (indirectLight == null) {
-      throw new IllegalStateException("Light Probe is invalid.");
-    }
     return indirectLight;
+  }
+
+  private void setIndirectLight(IndirectLight indirectLight) {
+    this.indirectLight = indirectLight;
   }
 
   private LightProbe(Builder builder) {
@@ -338,7 +313,7 @@ public class LightProbe {
    * asynchronously
    */
   @SuppressWarnings("AndroidApiChecker") // java.util.concurrent.CompletableFuture
-  private CompletableFuture<LightingDef> loadInBackground(
+  private CompletableFuture<IndirectLight> loadInBackground(
       Callable<InputStream> inputStreamCreator) {
     return CompletableFuture.supplyAsync(
         () -> {
@@ -360,49 +335,7 @@ public class LightProbe {
                 "The Sceneform bundle containing the Light Probe could not be loaded.");
           }
 
-          SceneformBundleDef rcb;
-          try {
-            rcb = SceneformBundle.tryLoadSceneformBundle(assetData);
-          } catch (VersionException e) {
-            throw new CompletionException(e);
-          }
-
-          if (rcb == null) {
-            throw new AssertionError(
-                "The Sceneform bundle containing the Light Probe could not be loaded.");
-          }
-
-          final int lightingDefsLength = rcb.lightingDefsLength();
-          if (lightingDefsLength < 1) {
-            throw new IllegalStateException("Content does not contain any Light Probe data.");
-          }
-
-          // If the name is non-null, look for the correct Light Probe to use.
-          // If the name is null then the first Light Probe is used.
-          int lightProbeIndex = -1;
-          if (name != null) {
-            for (int i = 0; i < lightingDefsLength; ++i) {
-              LightingDef lightingDef = rcb.lightingDefs(i);
-              if (lightingDef.name().equals(name)) {
-                lightProbeIndex = i;
-                break;
-              }
-            }
-
-            if (lightProbeIndex < 0) {
-              throw new IllegalArgumentException(
-                  "Light Probe asset \"" + name + "\" not found in bundle.");
-            }
-          } else {
-            lightProbeIndex = 0;
-          }
-
-          LightingDef lightingDef = rcb.lightingDefs(lightProbeIndex);
-          if (lightingDef == null) {
-            throw new IllegalStateException("LightingDef is invalid.");
-          }
-
-          return lightingDef;
+          return KTXLoader.INSTANCE.createIndirectLight(EngineInstance.getEngine().getFilamentEngine(), assetData, new KTXLoader.Options());
         },
         ThreadPools.getThreadPoolExecutor());
   }
@@ -510,9 +443,9 @@ public class LightProbe {
           lightProbe
               .loadInBackground(inputStreamCreator)
               .thenApplyAsync(
-                  lightingDef -> {
+                  indirectLight -> {
                     // Call to buildFilamentResource on the Filament thread
-                    lightProbe.buildFilamentResource(lightingDef);
+                    lightProbe.setIndirectLight(indirectLight);
                     return lightProbe;
                   },
                   ThreadPools.getMainExecutor());

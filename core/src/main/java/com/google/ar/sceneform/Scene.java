@@ -1,16 +1,21 @@
 package com.google.ar.sceneform;
 
 import android.media.Image;
+import android.net.Uri;
 import android.util.Log;
 import android.view.MotionEvent;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
+import com.google.android.filament.Engine;
+import com.google.android.filament.Texture;
+import com.google.android.filament.utils.KTXLoader;
 import com.google.ar.sceneform.collision.Collider;
 import com.google.ar.sceneform.collision.CollisionSystem;
 import com.google.ar.sceneform.collision.Ray;
 import com.google.ar.sceneform.rendering.Color;
+import com.google.ar.sceneform.rendering.EngineInstance;
 import com.google.ar.sceneform.rendering.LightProbe;
 import com.google.ar.sceneform.rendering.Renderer;
 import com.google.ar.sceneform.utilities.AndroidPreconditions;
@@ -18,6 +23,14 @@ import com.google.ar.sceneform.utilities.EnvironmentalHdrParameters;
 import com.google.ar.sceneform.utilities.LoadHelper;
 import com.google.ar.sceneform.utilities.Preconditions;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
+import java.nio.Buffer;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 
 /**
@@ -82,7 +95,7 @@ public class Scene extends NodeParent {
     }
 
     private static final String TAG = Scene.class.getSimpleName();
-    private static final String DEFAULT_LIGHTPROBE_ASSET_NAME = "small_empty_house_2k";
+    private static final String DEFAULT_LIGHTPROBE_ASSET_NAME = "sceneform_default_light_probe_skybox";
     private static final String DEFAULT_LIGHTPROBE_RESOURCE_NAME = "sceneform_default_light_probe";
     private static final float DEFAULT_EXPOSURE = 1.0f;
     public static final EnvironmentalHdrParameters DEFAULT_HDR_PARAMETERS =
@@ -536,8 +549,7 @@ public class Scene extends NodeParent {
 
         try {
             LightProbe.builder()
-                    .setSource(view.getContext(), defaultLightProbeId)
-                    .setAssetName(DEFAULT_LIGHTPROBE_ASSET_NAME)
+                    .setSource(view.getContext(), Uri.parse("https://github.com/ThomasGorisse/sceneform-android-sdk/blob/master/core/assets-sources/lights/sceneform_default_light_probe/sceneform_default_light_probe_ibl.ktx?raw=true"))
                     .build()
                     .thenAccept(
                             result -> {
